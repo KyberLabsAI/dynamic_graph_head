@@ -29,7 +29,7 @@ class ThreadHead(threading.Thread):
 
         self.dt = dt
         self.env = env
-        
+
         if type(heads) != dict:
             self.head = heads # Simple-edge-case for single head setup.
             self.heads = {
@@ -48,12 +48,12 @@ class ThreadHead(threading.Thread):
         self.logging = False
         self.log_writing = False
 
-        self.timing_control = 0. 
-        self.timing_utils   = 0. 
-        self.timing_logging = 0. 
-        self.absolute_time  = 0. 
+        self.timing_control = 0.
+        self.timing_utils   = 0.
+        self.timing_logging = 0.
+        self.absolute_time  = 0.
         self.time_start_recording = 0.
-        
+
         # Start the websocket thread/server and publish data if requested.
         self.ws_thread = None
 
@@ -162,18 +162,18 @@ class ThreadHead(threading.Thread):
                         'key': key,
                         'size': field_size
                     }
-                    
+
         self.fields = fields
         self.fields_access = fields_access
-        
-        # init timings logs 
+
+        # init timings logs
         self.fields_timings                         = ['timing_utils', 'timing_control', 'timing_logging']
         self.fields_access_timing                   = {}
         self.fields_access_timing['timing_utils']   = {'ctrl' : self, 'key' : 'timing_utils', 'size' : 1}
         self.fields_access_timing['timing_control'] = {'ctrl' : self, 'key' : 'timing_control', 'size' : 1}
         self.fields_access_timing['timing_logging'] = {'ctrl' : self, 'key' : 'timing_logging', 'size' : 1}
         self.fields_access_timing['absolute_time']  = {'ctrl' : self, 'key' : 'absolute_time', 'size' : 1}
-        
+
     def start_streaming(self):
         if self.streaming:
             print('!!! ThreadHead: Already streaming data.')
@@ -187,7 +187,7 @@ class ThreadHead(threading.Thread):
         # If no logging yet, then setup the fields to log.
         if not self.logging:
             self.init_log_stream_fields()
-        
+
         print('!!! ThreadHead: Start streaming data.')
 
     def stop_streaming(self):
@@ -213,10 +213,10 @@ class ThreadHead(threading.Thread):
 
         self.data_logger = DataLogger(log_filename)
         self.log_filename = log_filename
-        
+
         for name, meta in self.fields_access.items():
             meta['log_id'] = self.data_logger.add_field(name, meta['size'])
-        
+
         # log timings
         self.fields_access_timing['timing_utils']['log_id']   = self.data_logger.add_field('timing_utils', self.fields_access_timing['timing_utils']['size'])
         self.fields_access_timing['timing_control']['log_id'] = self.data_logger.add_field('timing_control', self.fields_access_timing['timing_control']['size'])
@@ -261,7 +261,7 @@ class ThreadHead(threading.Thread):
         self.data_logger.close_file()
         abs_filepath = os.path.abspath(self.data_logger.filepath)
         print('!!! ThreadHead: Stop logging to file "%s".' % (abs_filepath))
-        
+
         # Optionally generate timing plots when user presses ctrl+c key
         print('\n Press Ctrl+C to plot the timings [FIRST MAKE SURE THE ROBOT IS AT REST OR IN A SAFETY MODE] \n')
         print(' Only works if thread_head.plot_timing() is called in the main \n')
@@ -269,11 +269,11 @@ class ThreadHead(threading.Thread):
 
 
     def plot_timing(self):
-        signal.signal(signal.SIGINT, lambda sig, frame : print("\n")) 
+        signal.signal(signal.SIGINT, lambda sig, frame : print("\n"))
         signal.pause()
         r = DataReader(self.log_filename)
         N = r.data['absolute_time'].shape[0]
-        clock_time = np.linspace(self.dt, N * self.dt, N) 
+        clock_time = np.linspace(self.dt, N * self.dt, N)
         absolute_time_to_clock = r.data['absolute_time'].reshape(-1) - clock_time
         fix, axes = plt.subplots(6, sharex=True, figsize=(8, 12))
         axes[0].plot(r.data['timing_utils'] * 1000)
@@ -290,14 +290,14 @@ class ThreadHead(threading.Thread):
                 ax.axhline(1000*self.dt, color='black')
             else:
                 ax.axhline(0., color='black')
-        signal.signal(signal.SIGINT, lambda sig, frame : sys.exit(0)) 
+        signal.signal(signal.SIGINT, lambda sig, frame : sys.exit(0))
         print('\n Press Ctrl+C again to close the timing plots and exit. \n')
         plt.show()
         signal.pause()
 
     def run_main_loop(self, sleep=False):
         self.absolute_time = time.time() - self.time_start_recording
-        
+
         # Read data from the heads / shared memory.
         for head in self.heads.values():
             head.read()
@@ -368,6 +368,12 @@ class ThreadHead(threading.Thread):
             else:
                 time.sleep(np.core.umath.maximum(-t, 0.00001))
 
+    def run_blocking_head(self):
+        """ Runs the main loop as fast as possible. Synced by the head. """
+        self.run_loop = True
+        self.time_start_recording = time.time()
+        while self.run_loop:
+            self.run_main_loop()
 
     def sim_run_timed(self, total_sim_time):
         self.run_loop = True
@@ -382,7 +388,7 @@ class ThreadHead(threading.Thread):
                 time.sleep(np.core.umath.maximum(-t, 0.00001))
             if(next_time >= total_sim_time):
                 self.run_loop = False
-                
+
     def sim_run(self, timesteps, sleep=False):
         """ Use this method to run the setup for `timesteps` amount of timesteps. """
         for i in range(timesteps):
