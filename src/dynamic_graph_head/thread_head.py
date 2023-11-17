@@ -57,21 +57,10 @@ class ThreadHead(threading.Thread):
         # Start the websocket thread/server and publish data if requested.
         self.ws_thread = None
 
-        # Read data from the heads / shared memory to have it available for the
-        # initial utils and safety-controller run.
-        for head in self.heads.values():
-            head.read()
-
-        # Run the utils once to make sure the data is available for
-        # the safety controller.
-        for (name, util) in self.utils:
-            util.update(self)
-
         self.active_controllers = None
         if type(safety_controllers) != list and type(safety_controllers) != tuple:
             safety_controllers = [safety_controllers]
         self.safety_controllers = safety_controllers
-        self.switch_controllers(safety_controllers)
 
     def switch_controllers(self, controllers):
         # Switching the controller changes the fields.
@@ -295,7 +284,7 @@ class ThreadHead(threading.Thread):
         plt.show()
         signal.pause()
 
-    def run_main_loop(self, sleep=False):
+    def run_main_loop(self, sleep=False, new_controllers=None):
         self.absolute_time = time.time() - self.time_start_recording
 
         # Read data from the heads / shared memory.
@@ -315,6 +304,9 @@ class ThreadHead(threading.Thread):
             self.switch_controllers(self.safety_controllers)
 
         self.timing_utils = time.time() - start
+
+        if new_controllers:
+            self.switch_controllers(new_controllers)
 
         # Run the active contollers.
         start = time.time()
@@ -360,9 +352,13 @@ class ThreadHead(threading.Thread):
         self.run_loop = True
         self.time_start_recording = time.time()
         next_time = 0.
+
+        # Put the safety controller as active controller.
+        self.run_main_loop(new_controllers=self.safety_controllers)
+
         while self.run_loop:
             t = time.time() - self.time_start_recording - next_time
-            if t >= 0:
+            if t >= 0 or hasattr(self.head, 'blocking'):
                 self.run_main_loop()
                 next_time += self.dt
             else:
