@@ -132,7 +132,7 @@ class ThreadHead(threading.Thread):
             for key, value in ctrl_dict.items():
                 if(key in LOG_FIELDS or LOG_FIELDS==['all']):
                     # Support only single-dim numpy arrays and scalar only.
-                    if type(value) == float or type(value) == int:
+                    if type(value) == float or type(value) == int or np.issctype(type(value)):
                         field_size = 1
                     elif type(value) == np.ndarray and value.ndim == 1:
                         field_size = value.shape[0]
