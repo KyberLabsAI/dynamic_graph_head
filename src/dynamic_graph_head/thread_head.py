@@ -111,18 +111,29 @@ class ThreadHead(threading.Thread):
                 streaming_json_data = json.dumps(data)
 
                 if self.streaming:
-                    await websocket.send(streaming_json_data)
+                    try:
+                        await websocket.send(streaming_json_data)
+
+                    # Connection was closed. Opening a new one.
+                    except websockets.exceptions.ConnectionClosedOK:
+                        print('!!! ThreadHead: Streaming connection closed. Reopening.')
+                        init_websocket_event_loop()
+                        return
+
                 await asyncio.sleep(0.01)
 
-        # Init an event loop.
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        def init_websocket_event_loop():
+            # Init an event loop.
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
 
-        # Init streaming of data using websockets.
-        self.websocket_server = websockets.serve(handle_client, "127.0.0.1", 5678)
-        self.streaming_event_loop = asyncio.get_event_loop()
-        self.streaming_event_loop.run_until_complete(self.websocket_server)
-        self.streaming_event_loop.run_forever()
+            # Init streaming of data using websockets.
+            self.websocket_server = websockets.serve(handle_client, "127.0.0.1", 5678)
+            self.streaming_event_loop = asyncio.get_event_loop()
+            self.streaming_event_loop.run_until_complete(self.websocket_server)
+            self.streaming_event_loop.run_forever()
+
+        init_websocket_event_loop()
 
     def init_log_stream_fields(self, LOG_FIELDS=['all']):
         fields = []
@@ -354,7 +365,8 @@ class ThreadHead(threading.Thread):
         next_time = 0.
 
         # Put the safety controller as active controller.
-        self.run_main_loop(new_controllers=self.safety_controllers)
+        if self.active_controllers == None:
+            self.run_main_loop(new_controllers=self.safety_controllers)
 
         while self.run_loop:
             t = time.time() - self.time_start_recording - next_time
@@ -387,5 +399,10 @@ class ThreadHead(threading.Thread):
 
     def sim_run(self, timesteps, sleep=False):
         """ Use this method to run the setup for `timesteps` amount of timesteps. """
+
+        if self.active_controllers == None:
+            timesteps -= 1
+            self.run_main_loop(sleep, new_controllers=self.safety_controllers)
+
         for i in range(timesteps):
             self.run_main_loop(sleep)
