@@ -96,21 +96,8 @@ class ThreadHead(threading.Thread):
 
         async def handle_client(websocket, path):
             while True:
-                data = {}
-                data['time'] = self.ti / 1000.
-
-                for name, value in self.fields_access.items():
-                    val = value['ctrl'].__dict__[value['key']]
-                    if type(val) == np.ndarray and val.ndim == 1:
-                        type_str = 'd' if val.dtype == np.float64 else 'f'
-                        data[name] = str(array.array(type_str, val.data))
-                    else:
-                        # Fake sending data as an array to the client.
-                        data[name] = "array('d', [" + str(val) + "])"
-
-                streaming_json_data = json.dumps(data)
-
                 if self.streaming:
+                    streaming_json_data = json.dumps(self.streaming_log_data)
                     try:
                         await websocket.send(streaming_json_data)
 
@@ -228,11 +215,27 @@ class ThreadHead(threading.Thread):
         self.logging = True
 
     def log_data(self):
+        # Create the data to log for streaming from the control thread.
+        # This makes sure the controller finished running and the data
+        # is consistent when it is streamed out.
+        if self.streaming:
+            data = self.streaming_log_data = {}
+            data['time'] = self.ti / 1000.
+
+            for name, value in self.fields_access.items():
+                val = value['ctrl'].__dict__[value['key']]
+                if type(val) == np.ndarray and val.ndim == 1:
+                    type_str = 'd' if val.dtype == np.float64 else 'f'
+                    data[name] = str(array.array(type_str, val.data))
+                else:
+                    # Fake sending data as an array to the client.
+                    data[name] = "array('d', [" + str(val) + "])"
+
         if not self.logging:
             return
 
         # Indicate that writing is happening to the file and that the file
-        # should not be clsoed right now.
+        # should not be closed right now.
         self.log_writing = True
         dl = self.data_logger
         dl.begin_timestep()
