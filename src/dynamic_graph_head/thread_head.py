@@ -54,6 +54,9 @@ class ThreadHead(threading.Thread):
         self.absolute_time  = 0.
         self.time_start_recording = 0.
 
+        self.running_controller = False
+        self.last_exception = None
+
         # Start the websocket thread/server and publish data if requested.
         self.ws_thread = None
 
@@ -97,7 +100,24 @@ class ThreadHead(threading.Thread):
         async def handle_client(websocket, path):
             while True:
                 if self.streaming:
-                    streaming_json_data = json.dumps(self.streaming_log_data)
+                    # Do not access the controller data until the current control cycle
+                    # has finished.
+                    while self.running_controller:
+                        await asyncio.sleep(0.0001)
+
+                    data = {}
+                    data['time'] = self.ti / 1000.
+
+                    for name, value in self.fields_access.items():
+                        val = value['ctrl'].__dict__[value['key']]
+                        if type(val) == np.ndarray and val.ndim == 1:
+                            type_str = 'd' if val.dtype == np.float64 else 'f'
+                            data[name] = str(array.array(type_str, val.data))
+                        else:
+                            # Fake sending data as an array to the client.
+                            data[name] = "array('d', [" + str(val) + "])"
+
+                    streaming_json_data = json.dumps(data)
                     try:
                         await websocket.send(streaming_json_data)
 
@@ -215,22 +235,6 @@ class ThreadHead(threading.Thread):
         self.logging = True
 
     def log_data(self):
-        # Create the data to log for streaming from the control thread.
-        # This makes sure the controller finished running and the data
-        # is consistent when it is streamed out.
-        if self.streaming:
-            data = self.streaming_log_data = {}
-            data['time'] = self.ti / 1000.
-
-            for name, value in self.fields_access.items():
-                val = value['ctrl'].__dict__[value['key']]
-                if type(val) == np.ndarray and val.ndim == 1:
-                    type_str = 'd' if val.dtype == np.float64 else 'f'
-                    data[name] = str(array.array(type_str, val.data))
-                else:
-                    # Fake sending data as an array to the client.
-                    data[name] = "array('d', [" + str(val) + "])"
-
         if not self.logging:
             return
 
@@ -323,18 +327,23 @@ class ThreadHead(threading.Thread):
             self.switch_controllers(new_controllers)
 
         # Run the active contollers.
+        self.running_controller = True  # Signal to streaming thread to wait till picking up new data.
         start = time.time()
         try:
             for ctrl in self.active_controllers:
                 ctrl.run(self)
         except KeyboardInterrupt as exp:
             raise exp
-        except:
+        except BaseException as e:
+            self.last_exception = e
             traceback.print_exc()
             print('!!! ThreadHead: Error with running controller -> Switching to safety controller.')
             self.switch_controllers(self.safety_controllers)
 
         self.timing_control = time.time() - start
+
+        self.ti += 1
+        self.running_controller = False
 
         # Write the computed control back to shared memory.
         for head in self.heads.values():
@@ -357,9 +366,6 @@ class ThreadHead(threading.Thread):
         self.log_data()
         self.timing_logging = time.time() - start
 
-        # No need to call stream_data or similar. The data is picked-up from
-        # the websocket processing thread async.
-        self.ti += 1
 
     def run(self):
         """ Use this method to start running the main loop in a thread. """
