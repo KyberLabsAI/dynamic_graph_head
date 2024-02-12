@@ -127,7 +127,7 @@ class ThreadHead(threading.Thread):
                         init_websocket_event_loop()
                         return
 
-                await asyncio.sleep(0.01)
+                await asyncio.sleep(0.001)
 
         def init_websocket_event_loop():
             # Init an event loop.
@@ -148,6 +148,10 @@ class ThreadHead(threading.Thread):
         for i, ctrl in enumerate(self.active_controllers):
             ctrl_dict = ctrl.__dict__
             for key, value in ctrl_dict.items():
+                if key.endswith('_'):
+                    print(f"  Not logging variable '{key}' as names ending in '_' indicates it should not be logged.")
+                    continue
+
                 if(key in LOG_FIELDS or LOG_FIELDS==['all']):
                     # Support only single-dim numpy arrays and scalar only.
                     if type(value) == float or type(value) == int or np.issctype(type(value)):
@@ -155,8 +159,7 @@ class ThreadHead(threading.Thread):
                     elif type(value) == np.ndarray and value.ndim == 1:
                         field_size = value.shape[0]
                     else:
-                        print("  Not logging '%s' as field type '%s' is unsupported" % (
-                            key, str(type(value))))
+                        print(f"  Not logging '{key}' as field type '{str(type(value))}' is unsupported.")
                         continue
 
                     if len(self.active_controllers) == 1:
