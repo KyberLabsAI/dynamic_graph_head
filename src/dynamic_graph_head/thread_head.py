@@ -12,10 +12,9 @@ import numpy as np
 import traceback
 
 import array
-import asyncio
 import datetime
 import json
-import websockets
+from websocket_server import WebsocketServer
 import threading
 import signal
 import sys
@@ -97,50 +96,33 @@ class ThreadHead(threading.Thread):
     def ws_thread_fn(self):
         print("Hello world from websocket thread.", self)
 
-        async def handle_client(websocket, path):
-            while True:
-                if self.streaming:
-                    # Do not access the controller data until the current control cycle
-                    # has finished.
-                    while self.running_controller:
-                        await asyncio.sleep(0.0001)
+        server = WebsocketServer(host='127.0.0.1', port=5678)
+        server.run_forever(threaded=True)
 
-                    data = {}
-                    data['time'] = self.ti * self.dt
+        while True:
+            if self.streaming:
+                # Do not access the controller data until the current control cycle
+                # has finished. Wailt till controller has finished running.
+                # Doing wait over signal from main controller thread to keep things
+                # seperated.
+                while self.running_controller:
+                    time.sleep(0.0001)
 
-                    for name, value in self.fields_access.items():
-                        val = value['ctrl'].__dict__[value['key']]
-                        if type(val) == np.ndarray and val.ndim == 1:
-                            type_str = 'd' if val.dtype == np.float64 else 'f'
-                            data[name] = str(array.array(type_str, val.data))
-                        else:
-                            # Fake sending data as an array to the client.
-                            data[name] = "array('d', [" + str(val) + "])"
+                data = {}
+                data['time'] = self.ti * self.dt
 
-                    streaming_json_data = json.dumps(data)
-                    try:
-                        await websocket.send(streaming_json_data)
+                for name, value in self.fields_access.items():
+                    val = value['ctrl'].__dict__[value['key']]
+                    if type(val) == np.ndarray and val.ndim == 1:
+                        type_str = 'd' if val.dtype == np.float64 else 'f'
+                        data[name] = str(array.array(type_str, val.data))
+                    else:
+                        # Fake sending data as an array to the client.
+                        data[name] = "array('d', [" + str(val) + "])"
 
-                    # Connection was closed. Opening a new one.
-                    except websockets.exceptions.ConnectionClosedOK:
-                        print('!!! ThreadHead: Streaming connection closed. Reopening.')
-                        init_websocket_event_loop()
-                        return
-
-                await asyncio.sleep(0.001)
-
-        def init_websocket_event_loop():
-            # Init an event loop.
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-
-            # Init streaming of data using websockets.
-            self.websocket_server = websockets.serve(handle_client, "127.0.0.1", 5678)
-            self.streaming_event_loop = asyncio.get_event_loop()
-            self.streaming_event_loop.run_until_complete(self.websocket_server)
-            self.streaming_event_loop.run_forever()
-
-        init_websocket_event_loop()
+                server.send_message_to_all(json.dumps(data))
+            else:
+                time.sleep(0.01)
 
     def init_log_stream_fields(self, LOG_FIELDS=['all']):
         fields = []
