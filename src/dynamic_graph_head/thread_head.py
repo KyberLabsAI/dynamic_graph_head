@@ -106,7 +106,7 @@ class ThreadHead(threading.Thread):
                         await asyncio.sleep(0.0001)
 
                     data = {}
-                    data['time'] = self.ti / 1000.
+                    data['time'] = self.ti * self.dt
 
                     for name, value in self.fields_access.items():
                         val = value['ctrl'].__dict__[value['key']]
