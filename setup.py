@@ -58,6 +58,7 @@ setup(
     scripts=scripts_list,
     install_requires=[
         "setuptools",
+        "websocket_server"
     ],
     zip_safe=True,
     maintainer="Julian Viereck",
