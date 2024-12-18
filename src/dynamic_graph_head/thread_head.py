@@ -98,15 +98,17 @@ class ThreadHead(threading.Thread):
 
         server = WebsocketServer(host='127.0.0.1', port=5678)
         server.run_forever(threaded=True)
+        last_ti = -1
 
         while True:
             if self.streaming:
                 # Do not access the controller data until the current control cycle
-                # has finished. Wailt till controller has finished running.
-                # Doing wait over signal from main controller thread to keep things
-                # seperated.
-                while self.running_controller:
+                # has finished. Doing wait over signal from main controller thread to
+                # keep things seperated.
+                while self.ti == last_ti:
                     time.sleep(0.0001)
+
+                last_ti = self.ti
 
                 data = {}
                 data['time'] = self.ti * self.dt
@@ -312,7 +314,6 @@ class ThreadHead(threading.Thread):
             self.switch_controllers(new_controllers)
 
         # Run the active contollers.
-        self.running_controller = True  # Signal to streaming thread to wait till picking up new data.
         start = time.time()
         try:
             for ctrl in self.active_controllers:
@@ -328,7 +329,6 @@ class ThreadHead(threading.Thread):
         self.timing_control = time.time() - start
 
         self.ti += 1
-        self.running_controller = False
 
         # Write the computed control back to shared memory.
         for head in self.heads.values():
