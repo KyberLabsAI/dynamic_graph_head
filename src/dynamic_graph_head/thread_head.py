@@ -58,6 +58,7 @@ class ThreadHead(threading.Thread):
 
         # Start the websocket thread/server and publish data if requested.
         self.ws_thread = None
+        self.ws_is_running = False
 
         self.active_controllers = None
         if type(safety_controllers) != list and type(safety_controllers) != tuple:
@@ -67,7 +68,7 @@ class ThreadHead(threading.Thread):
     def switch_controllers(self, controllers):
         # Switching the controller changes the fields.
         # Therefore, stopping streaming and logging.
-        self.stop_streaming()
+        was_streaming = self.streaming
         self.stop_logging()
 
         if type(controllers) != list and type(controllers) != tuple:
@@ -93,38 +94,47 @@ class ThreadHead(threading.Thread):
                 ctrl.warmup(self)
                 ctrl.run(self)
 
+        # If we were streaming before, calling `start_streaming()`
+        # again to stream the new fields of the new controller.
+        if was_streaming:
+            self.start_streaming()
+
     def ws_thread_fn(self):
-        print("Hello world from websocket thread.", self)
+        print("Starting websocket thread for streaming.", self)
 
         server = WebsocketServer(host='127.0.0.1', port=5678)
+        self.ws_is_running = True
         server.run_forever(threaded=True)
         last_ti = -1
 
-        while True:
-            if self.streaming:
-                # Do not access the controller data until the current control cycle
-                # has finished. Doing wait over signal from main controller thread to
-                # keep things seperated.
-                while self.ti == last_ti:
-                    time.sleep(0.0001)
+        while self.streaming:
+            # Do not access the controller data until the current control cycle
+            # has finished. Doing wait over signal from main controller thread to
+            # keep things seperated.
+            if self.ti == last_ti:
+                time.sleep(0.0001)
+                continue
 
-                last_ti = self.ti
+            last_ti = self.ti
 
-                data = {}
-                data['time'] = self.ti * self.dt
+            data = {}
+            data['time'] = self.ti * self.dt
 
-                for name, value in self.fields_access.items():
-                    val = value['ctrl'].__dict__[value['key']]
-                    if type(val) == np.ndarray and val.ndim == 1:
-                        type_str = 'd' if val.dtype == np.float64 else 'f'
-                        data[name] = str(array.array(type_str, val.data))
-                    else:
-                        # Fake sending data as an array to the client.
-                        data[name] = "array('d', [" + str(val) + "])"
+            for name, value in self.fields_access.items():
+                val = value['ctrl'].__dict__[value['key']]
+                if type(val) == np.ndarray and val.ndim == 1:
+                    type_str = 'd' if val.dtype == np.float64 else 'f'
+                    data[name] = str(array.array(type_str, val.data))
+                else:
+                    # Fake sending data as an array to the client.
+                    data[name] = "array('d', [" + str(val) + "])"
 
-                server.send_message_to_all(json.dumps(data))
-            else:
-                time.sleep(0.01)
+            server.send_message_to_all(json.dumps(data))
+
+        server.shutdown_gracefully()
+        self.ws_is_running = False
+        print("Shuted down websocket thread for streaming.", self)
+
 
     def init_log_stream_fields(self, LOG_FIELDS=['all']):
         fields = []
@@ -170,8 +180,10 @@ class ThreadHead(threading.Thread):
 
     def start_streaming(self):
         if self.streaming:
-            print('!!! ThreadHead: Already streaming data.')
+            print('!!! ThreadHead: Already streaming data. Updating fields to log.')
+            self.init_log_stream_fields()
             return
+
         self.streaming = True
 
         if self.ws_thread is None:
@@ -189,6 +201,13 @@ class ThreadHead(threading.Thread):
             return
 
         self.streaming = False
+        self.ws_thread = None
+
+        # Wait till the websocket server is shut down. Doing this
+        # to avoid stopping one th and starting another one
+        # having two websocket threads running at the same time.
+        while self.ws_is_running:
+            time.sleep(0.01)
 
         print('!!! ThreadHead: Stop streaming data.')
 
@@ -351,16 +370,25 @@ class ThreadHead(threading.Thread):
         self.log_data()
         self.timing_logging = time.time() - start
 
+    def stop(self):
+        self.stop_logging()
+        self.stop_streaming()
+        self.run_loop = False
+
+    def start(self):
+        # Put the safety controller as active controller. Doing this here
+        # such that a call for `th.start_streaming()`` right after
+        # `th.start()` has a controller setup.
+        if self.active_controllers == None:
+            self.run_main_loop(new_controllers=self.safety_controllers)
+
+        super().start()
 
     def run(self):
         """ Use this method to start running the main loop in a thread. """
         self.run_loop = True
         self.time_start_recording = time.time()
         next_time = 0.
-
-        # Put the safety controller as active controller.
-        if self.active_controllers == None:
-            self.run_main_loop(new_controllers=self.safety_controllers)
 
         while self.run_loop:
             t = time.time() - self.time_start_recording - next_time
