@@ -124,7 +124,10 @@ class ThreadHead(threading.Thread):
                 val = value['ctrl'].__dict__[value['key']]
                 if type(val) == np.ndarray and val.ndim == 1:
                     type_str = 'd' if val.dtype == np.float64 else 'f'
-                    data[name] = str(array.array(type_str, val.data))
+                    try:
+                        data[name] = str(array.array(type_str, val.data))
+                    except Exception as e:
+                        print('ws_thread', name, val, e)
                 else:
                     # Fake sending data as an array to the client.
                     data[name] = "array('d', [" + str(val) + "])"
