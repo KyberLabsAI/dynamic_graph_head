@@ -38,8 +38,6 @@ class ThreadHead(threading.Thread):
             self.heads = heads
 
         self.utils = utils
-        for (name, util) in utils:
-            self.__dict__[name] = util
 
         self.ti = 0
         self.streaming = False
@@ -64,6 +62,15 @@ class ThreadHead(threading.Thread):
         if type(safety_controllers) != list and type(safety_controllers) != tuple:
             safety_controllers = [safety_controllers]
         self.safety_controllers = safety_controllers
+
+
+    def util(self, name):
+        for (util_name, util) in self.utils:
+            if util_name == name:
+                return util
+
+        raise Exception(f'Util with name "{name}" not found.')
+
 
     def switch_controllers(self, controllers):
         # Switching the controller changes the fields.
@@ -122,7 +129,7 @@ class ThreadHead(threading.Thread):
 
             for name, value in self.fields_access.items():
                 val = value['ctrl'].__dict__[value['key']]
-                if type(val) == np.ndarray and val.ndim == 1:
+                if isinstance(val, np.ndarray) and val.ndim == 1:
                     type_str = 'd' if val.dtype == np.float64 else 'f'
                     try:
                         data[name] = str(array.array(type_str, val.data))
