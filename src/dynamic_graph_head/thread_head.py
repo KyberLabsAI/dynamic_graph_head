@@ -57,6 +57,11 @@ class ThreadHead(threading.Thread):
         # Start the websocket thread/server and publish data if requested.
         self.ws_thread = None
         self.ws_is_running = False
+        self.ws_server = None
+        self.ws_data_to_send = []
+        self.ws_data_delay_size = 30
+        self.ws_last_data = {}
+        self.ws_custom_logging = False
 
         self.active_controllers = None
         if type(safety_controllers) != list and type(safety_controllers) != tuple:
@@ -106,10 +111,33 @@ class ThreadHead(threading.Thread):
         if was_streaming:
             self.start_streaming()
 
+    def ws_append_data(self, data, name, val):
+        if isinstance(val, np.ndarray) and val.ndim == 1:
+            type_str = 'd' if val.dtype == np.float64 else 'f'
+            try:
+                data[name] = str(array.array(type_str, val.data))
+            except Exception as e:
+                print('ws_thread', name, val, e)
+        else:
+            # Fake sending data as an array to the client.
+            data[name] = "array('d', [" + str(val) + "])"
+
+    def ws_send_data(self, data):
+        # Only send data if the ws_server was started.
+        if not self.ws_server:
+            return
+
+        try:
+            self.ws_server.send_message_to_all(json.dumps(data))
+        except ConnectionResetError:
+            print('Websocket ConnectionResetError')
+        except:
+            print('Error with sending websocket data')
+
     def ws_thread_fn(self):
         print("Starting websocket thread for streaming.", self)
 
-        server = WebsocketServer(host='127.0.0.1', port=5678)
+        self.ws_server = server = WebsocketServer(host='127.0.0.1', port=5678)
         self.ws_is_running = True
         server.run_forever(threaded=True)
         last_ti = -1
@@ -125,24 +153,25 @@ class ThreadHead(threading.Thread):
             last_ti = self.ti
 
             data = {}
-            data['time'] = self.ti * self.dt
+            # Log one dt earlier as the dt was incremented in the control loop at this
+            # time already.
+            data['time'] = (self.ti - 1) * self.dt
 
             for name, value in self.fields_access.items():
                 val = value['ctrl'].__dict__[value['key']]
-                if isinstance(val, np.ndarray) and val.ndim == 1:
-                    type_str = 'd' if val.dtype == np.float64 else 'f'
-                    try:
-                        data[name] = str(array.array(type_str, val.data))
-                    except Exception as e:
-                        print('ws_thread', name, val, e)
-                else:
-                    # Fake sending data as an array to the client.
-                    data[name] = "array('d', [" + str(val) + "])"
+                self.ws_append_data(data, name, val)
 
-            server.send_message_to_all(json.dumps(data))
+            self.ws_last_data = data
+            self.ws_data_to_send.append(data)
+
+            if len(self.ws_data_to_send) > self.ws_data_delay_size:
+                self.ws_send_data(self.ws_data_to_send)
+                self.ws_data_to_send = []
 
         server.shutdown_gracefully()
+        self.ws_server = None
         self.ws_is_running = False
+        self.ws_data_to_send = []
         print("Shuted down websocket thread for streaming.", self)
 
 
@@ -152,7 +181,7 @@ class ThreadHead(threading.Thread):
         for i, ctrl in enumerate(self.active_controllers):
             ctrl_dict = ctrl.__dict__
             for key, value in ctrl_dict.items():
-                if key.endswith('_'):
+                if key.startswith('_') or key.endswith('_'):
                     print(f"  Not logging variable '{key}' as names ending in '_' indicates it should not be logged.")
                     continue
 
