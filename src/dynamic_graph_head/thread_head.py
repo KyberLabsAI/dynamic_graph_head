@@ -112,13 +112,17 @@ class ThreadHead(threading.Thread):
             self.start_streaming()
 
     def ws_append_data(self, data, name, val):
-        if isinstance(val, np.ndarray) and val.ndim == 1:
+        val_type = type(val)
+        if issubclass(val_type, np.ndarray) and val.ndim == 1:
             type_str = 'd' if val.dtype == np.float64 else 'f'
             try:
                 data[name] = str(array.array(type_str, val.data))
             except Exception as e:
                 print('ws_thread', name, val, e)
         else:
+            if val_type is bool:
+                val = 1 if val else 0
+
             # Fake sending data as an array to the client.
             data[name] = "array('d', [" + str(val) + "])"
 
@@ -187,12 +191,16 @@ class ThreadHead(threading.Thread):
 
                 if(key in LOG_FIELDS or LOG_FIELDS==['all']):
                     # Support only single-dim numpy arrays and scalar only.
-                    if type(value) == float or type(value) == int or issubclass(type(value), np.generic):
+                    val_type = type(value)
+                    if (
+                        val_type is float or val_type is int or val_type is bool or
+                        issubclass(val_type, np.generic)
+                    ):
                         field_size = 1
-                    elif type(value) == np.ndarray and value.ndim == 1:
+                    elif issubclass(val_type, np.ndarray) and value.ndim == 1:
                         field_size = value.shape[0]
                     else:
-                        print(f"  Not logging '{key}' as field type '{str(type(value))}' is unsupported.")
+                        print(f"  Not logging '{key}' as field type '{str(val_type)}' is unsupported.")
                         continue
 
                     if len(self.active_controllers) == 1:
