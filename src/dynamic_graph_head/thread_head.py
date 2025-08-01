@@ -14,12 +14,10 @@ import traceback
 import array
 import datetime
 import json
-from websocket_server import WebsocketServer
 import threading
 import signal
 import sys
 
-from mim_data_utils import DataLogger, DataReader
 import matplotlib.pylab as plt
 
 class ThreadHead(threading.Thread):
