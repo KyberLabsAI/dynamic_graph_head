@@ -435,13 +435,17 @@ class ThreadHead(threading.Thread):
         self.time_start_recording = time.time()
         next_time = 0.
 
-        while self.run_loop:
-            t = time.time() - self.time_start_recording - next_time
-            if t >= 0 or hasattr(self.head, 'blocking'):
-                self.run_main_loop()
-                next_time += self.dt
-            else:
-                time.sleep(np.core.umath.maximum(-t, 0.00001))
+        try:
+            while self.run_loop:
+                t = time.time() - self.time_start_recording - next_time
+                if t >= 0 or hasattr(self.head, 'blocking'):
+                    self.run_main_loop()
+                    next_time += self.dt
+                else:
+                    time.sleep(np.core.umath.maximum(-t, 0.00001))
+        except BaseException as e:
+            self.last_exception = e
+
 
     def run_blocking_head(self):
         """ Runs the main loop as fast as possible. Synced by the head. """
