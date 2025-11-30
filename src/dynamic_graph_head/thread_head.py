@@ -353,6 +353,26 @@ class ThreadHead(threading.Thread):
         plt.show()
         signal.pause()
 
+    def ctrl_run(self):
+        for ctrl in self.active_controllers:
+            ctrl.run(self)
+
+    def ctrl_write(self):
+        for ctrl in self.active_controllers:
+            if (hasattr(ctrl, 'post_write')):
+                ctrl.post_write(self)
+
+    def execute_safely(self, fn):
+        try:
+            fn()
+        except KeyboardInterrupt as exp:
+            raise exp
+        except BaseException as e:
+            self.last_exception = e
+            traceback.print_exc()
+            print('!!! ThreadHead: Error with running controller -> Switching to safety controller.')
+            self.switch_controllers(self.safety_controllers)
+
     def run_main_loop(self, sleep=False, new_controllers=None):
         self.absolute_time = time.time() - self.time_start_recording
 
@@ -379,24 +399,15 @@ class ThreadHead(threading.Thread):
 
         # Run the active contollers.
         start = time.time()
-        try:
-            for ctrl in self.active_controllers:
-                ctrl.run(self)
-        except KeyboardInterrupt as exp:
-            raise exp
-        except BaseException as e:
-            self.last_exception = e
-            traceback.print_exc()
-            print('!!! ThreadHead: Error with running controller -> Switching to safety controller.')
-            self.switch_controllers(self.safety_controllers)
+        self.execute_safely(self.ctrl_run)
 
         self.timing_control = time.time() - start
-
-        self.ti += 1
 
         # Write the computed control back to shared memory.
         for head in self.heads.values():
             head.write()
+
+        self.execute_safely(self.ctrl_post_run)
 
         # If an env is povided, step it.
         if self.env:
@@ -410,6 +421,8 @@ class ThreadHead(threading.Thread):
 
                 # Step the actual simulation.
                 self.env.step(sleep=sleep)
+
+        self.ti += 1
 
         start = time.time()
         self.log_data()
