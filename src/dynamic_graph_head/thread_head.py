@@ -17,6 +17,7 @@ import json
 import threading
 import signal
 import sys
+from kyber_utils.exception import ExceptionStackInspector
 
 import matplotlib.pylab as plt
 
@@ -357,7 +358,7 @@ class ThreadHead(threading.Thread):
         for ctrl in self.active_controllers:
             ctrl.run(self)
 
-    def ctrl_write(self):
+    def ctrl_post_write(self):
         for ctrl in self.active_controllers:
             if (hasattr(ctrl, 'post_write')):
                 ctrl.post_write(self)
@@ -368,7 +369,7 @@ class ThreadHead(threading.Thread):
         except KeyboardInterrupt as exp:
             raise exp
         except BaseException as e:
-            self.last_exception = e
+            self.last_exception = ExceptionStackInspector()
             traceback.print_exc()
             print('!!! ThreadHead: Error with running controller -> Switching to safety controller.')
             self.switch_controllers(self.safety_controllers)
@@ -407,7 +408,7 @@ class ThreadHead(threading.Thread):
         for head in self.heads.values():
             head.write()
 
-        self.execute_safely(self.ctrl_post_run)
+        self.execute_safely(self.ctrl_post_write)
 
         # If an env is povided, step it.
         if self.env:
@@ -457,7 +458,7 @@ class ThreadHead(threading.Thread):
                 else:
                     time.sleep(np.core.umath.maximum(-t, 0.00001))
         except BaseException as e:
-            self.last_exception = e
+            self.last_exception = ExceptionStackInspector()
 
 
     def run_blocking_head(self):
