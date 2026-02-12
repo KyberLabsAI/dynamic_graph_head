@@ -446,17 +446,19 @@ class ThreadHead(threading.Thread):
     def run(self):
         """ Use this method to start running the main loop in a thread. """
         self.run_loop = True
-        self.time_start_recording = time.time()
-        next_time = 0.
+        next_time = time.time()
 
         try:
             while self.run_loop:
-                t = time.time() - self.time_start_recording - next_time
-                if t >= 0 or hasattr(self.head, 'blocking'):
-                    self.run_main_loop()
+                t = time.time()
+                while t < next_time:
+                    time.sleep(0.00001)
+                    t = time.time()
+                    
+                self.run_main_loop()
+
+                while next_time < t:
                     next_time += self.dt
-                else:
-                    time.sleep(np.core.umath.maximum(-t, 0.00001))
         except BaseException as e:
             self.last_exception = ExceptionStackInspector()
 
