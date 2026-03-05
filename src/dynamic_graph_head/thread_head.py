@@ -18,6 +18,7 @@ import threading
 import signal
 import sys
 from kyber_utils.exception import ExceptionStackInspector
+from kyber_utils.os import _rt_enabled, apply_realtime_priority, sleep_until
 
 import matplotlib.pylab as plt
 
@@ -445,20 +446,26 @@ class ThreadHead(threading.Thread):
 
     def run(self):
         """ Use this method to start running the main loop in a thread. """
+        if _rt_enabled:
+            apply_realtime_priority()
+
         self.run_loop = True
-        next_time = time.time()
+        next_time = time.clock_gettime(time.CLOCK_MONOTONIC)
+        max_lag = 1.5 * self.dt
 
         try:
             while self.run_loop:
-                t = time.time()
-                while t < next_time:
-                    time.sleep(0.00001)
-                    t = time.time()
-                    
+                sleep_until(next_time)
+
                 self.run_main_loop()
 
-                while next_time < t:
-                    next_time += self.dt
+                next_time += self.dt
+
+                # If too far behind, drop ticks and resync to next grid point
+                t = time.clock_gettime(time.CLOCK_MONOTONIC)
+                if t - next_time > max_lag:
+                    while next_time < t:
+                        next_time += self.dt
         except BaseException as e:
             self.last_exception = ExceptionStackInspector()
 
