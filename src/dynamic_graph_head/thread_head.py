@@ -50,6 +50,7 @@ class ThreadHead(threading.Thread):
         self.timing_logging = 0.
         self.absolute_time  = 0.
         self.time_start_recording = 0.
+        self.is_paused = False
 
         self.running_controller = False
         self.last_exception = None
@@ -375,8 +376,17 @@ class ThreadHead(threading.Thread):
             print('!!! ThreadHead: Error with running controller -> Switching to safety controller.')
             self.switch_controllers(self.safety_controllers)
 
+    def pause(self):
+        self.is_paused = True
+
+    def resume(self):
+        self.is_paused = False
+
     def run_main_loop(self, sleep=False, new_controllers=None):
         self.absolute_time = time.time() - self.time_start_recording
+
+        if self.is_paused:
+            return
 
         # Read data from the heads / shared memory.
         for head in self.heads.values():
